@@ -3,7 +3,7 @@
 #SBATCH -n 1                      # Number of tasks (really number of CPU Cores/task). Don't specify more than 16 unless approved by the system admin
 #SBATCH --array=1-188    #change this to match up with the number of parallel computing jobs; also generate a config file 
 #SBATCH --mail-type=END           # Type of email notification- BEGIN,END,FAIL,ALL. Equivalent to the -m option in SGE 
-#SBATCH --mail-user=kexindon@mit.edu           # Email to which notifications will be sent. Equivalent to the -M option in SGE. You must replace [] with your email address.
+#SBATCH --mail-user=XXX@mit.edu           # Email to which notifications will be sent. Equivalent to the -M option in SGE. You must replace [] with your email address.
 #SBATCH --exclude=c[5-22]
 #SBATCH --nice=100000
 #############################################

@@ -1,0 +1,2 @@
+cd $LABROOT/sequence_folder
+sbatch crispresso_analysis_42nt.sh

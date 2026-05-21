@@ -1,6 +1,6 @@
 # fsrlab-sensor-analysis
 
-NGS sensor analysis pipeline.
+NGS sensor analysis pipeline for base editing and prime editing screens.
 
 **Contributors:** Kexin Dong, Sam Gould
 **Last updated:** May 20, 2026
@@ -10,6 +10,7 @@ NGS sensor analysis pipeline.
 - (For first-time user of the pipeline) Use micromamba to replaces conda for env management on the cluster, which is way faster.
 - Detailed instructions on how to deal with samples with duplicated NGS lanes.
 - Sensor extraction rewritten with trimming and revised QC strategies, so that only required regions are checked, with optional per-base quality thresholds.
+- Sensor extraction rewritten for prime editing screen analysis.
 - Updated LFC calculation with more comprehensive information for downstream analysis.
 
 ## How to use
@@ -164,49 +165,110 @@ Step 4 - 6 will be run on the cluster. For each step, there is a python script a
 
 This step (A) filters low-quality reads, (B) counts guides, and (C) splits sensor reads into per-guide fastq files. 
 
-Three variants of the sbatch script are provided — pick one based on how strict the QC should be:
+You'll notice two versions of the extraction script:
 
 | Script | QC strategy |
 | --- | --- |
-| `sensor_extraction_42nt`                 | Average of full sequence (original SG version) |
-| `sensor_extraction_42nt_trimming_quality`| Can choose region checks + per-base quality threshold (revised by KD, 2026-03-10) |
+| `sensor_extraction_42nt`                 | Averages quality over the full read (original SG version) |
+| `sensor_extraction_42nt_trimming_quality`| Region-specific checks + optional per-base threshold (KD, 2026-03-10) |
 
-### Edit before submitting
+The revised version was added to fix a QC problem with the original. The OG only looks at the average quality of the whole read, but we've noticed the sequencing center sometimes doesn't trim extra sequences properly — which under the OG strategy throws away perfectly usable reads. The revised `sensor_extraction_42nt_trimming_quality` lets you QC only the regions you actually care about (barcode + sensor).
 
-In whichever `.sh` you pick:
+The OG version is fine for most cases, but I'd recommend switching to the revised one for future screens.
 
-1. `--array=1-N` — match the number of samples in your config
-2. `--mail-user` — your email
-3. `cd ...` — path to your sequencing folder
-4. `config=` — your config filename
-5. Parameters: `splitby`, `proto_mismatches_allowed`, `bc_len`, `sensor_len` (and `quality_check_mode` for v2)
-6. Library file name in the final `python3` line
+### Editing
+Whichever you choose, you need to edite`.sh` script as follows:
+
+![Step 4](images/step_4.png)
+
+1. This needs to match up with the number of samples you’re running. E.g if your config file runs from 1-10, set this to 1-10.
+2. Change it to your email!
+3. Choose conda or micromamba to match what you use and change the env path to yours to activate the environment.
+4. Set this path to match up with the folder where your sequencing data is stored.
+5. Set this to match up with your config file name with the prefix “./”
+6. These are parameters for the run.
+    - **splitby** = whether to split sensors into separate fastq files by the protosapcer identity or the barcode identity 
+        - Options: 'protospacer' or 'barcode'.
+        - Recommend 'protospacer'.
+    - **proto_mismatches_allowed** = # of protospacer mismatches allowed when performing counts.
+    - **bc_len** = length of barcode (normally 15 nt).
+    - **sensor_len** = length of sensor (normally 42 nt).
+    - **quality_check_mode (revised version only)** = how to drop out low quality reads. Phred threshold is 30 by default.
+        - Options:
+            - 'full_average': averages Phred quality across the **entire** R1 and R2 reads, and drops the read if either average falls below threshold. This is the original SG behavior — strict, but discards reads when untrimmed flanking sequence drags the average down.
+            - 'region_average': averages Phred quality only over the **regions actually used downstream** (barcode + sensor in R1, protospacer in R2). Flanking junk no longer affects the call.
+            - 'region_average_and_threshold': same region-restricted averaging as above, **plus** two extra per-base checks: (a) no single base in the **barcode region** may fall below Phred 30 (any single bad base in the barcode → drop, because barcode errors break guide assignment), and (b) no more than 5 bases in the required regions may fall below Phred 20. This is the strictest mode.
+        - Recommend `'region_average'` for most runs, or `'region_average_and_threshold'` when barcode-assignment accuracy is critical.
+7. Change the library filename to match up with the name that you’ve given to the file.
+
+
+### Add to cluster
+Once this is done, add this (1) **sensor_extraction_42nt_trimming_quality.sh** to your sequencing folder, along with (2) **sensor_extraction_42nt_trimming_quality.py**.
+
 
 ### Submit
+Finally, run the cluster command to execute this script by logging into the cluster and running the command in [`RUN_THIS.sh`](NGS-scripts/STEP4_sensor_extraction/RUN_THIS.sh).
 
-```bash
-cd $LABROOT/<your_run>
-sbatch sensor_extraction_42nt.sh         # or _trimming.sh / _trimming_quality.sh
+```
+cd $LABROOT/<sequencing_folder>
+sbatch sensor_extraction_42nt_trimming_quality.sh
 ```
 
-`RUN_THIS.sh` is a one-liner shortcut that does `cd` + `sbatch` together.
+### Step 4 for prime editing screen analysis
 
+For **prime editing** screens we use separate scripts, especially for this step. See [`NGS-scripts-prime-editing/`](NGS-scripts-prime-editing/) for scripts and examples.
+
+In earlier PE analyses we saw an unusually high rate of barcode–protospacer recombination. To improve barcode specificity, the matched barcode is extended by **8 nt** into the sensor sequence — i.e. the script matches reads against a **16 nt** `Hamming_BC` (the original 8 nt BC + the first 8 nt of the sensor), while the actual sensor extracted into the per-guide fastq still starts at position 8 (`real_bc_len`). This gives more discriminating power without losing any sensor content downstream.
+
+#### Editing the PE `.sh`
+
+Same fields as the BE version, plus two PE-specific ones:
+
+- **bc_len** = length of the extended barcode used for matching (normally `16` for PE)
+- **real_bc_len** = where the sensor actually starts in R1 (normally `8` — the overlap region between BC and sensor)
+- **sensor_len** = length of the sensor extracted into per-guide fastq (normally `55` for PE)
+- **quality_check_mode** = `'full_average'`, `'region_average'`, or `'region_average_and_threshold'` (same semantics as above; region check covers `[:bc_len + sensor_len]` in R1)
+
+Library file must contain the `pegRNA_id` column.
+
+#### Submit
+
+```bash
+cd $LABROOT/<sequencing_folder>
+sbatch sensor_extraction_peg_counts_ext_bc_16nt.sh
+```
 ---
 
 ## STEP 5 — CRISPResso sensor analysis
 
 [`NGS-scripts/STEP5_sernsor_analysis/`](NGS-scripts/STEP5_sernsor_analysis/)
 
-Uses **`crispresso_env`**. Runs CRISPResso on each per-guide fastq from STEP4.
+This step runs CRISPResso on each per-guide fastq from STEP4.
 
-Edit [`crispresso_analysis_42nt.sh`](NGS-scripts/STEP5_sernsor_analysis/crispresso_analysis_42nt.sh): same fields as STEP4 (`--array`, `--mail-user`, `cd`, `config`, library file name).
+### Edit
+Edit [`crispresso_analysis_42nt.sh`](NGS-scripts/STEP5_sernsor_analysis/crispresso_analysis_42nt.sh).
+
+![Step 5](images/step_5.png)
+
+1. This needs to match up with the number of samples you’re running. E.g if your config file runs from 1-10, set this to 1-10.
+2. Change it to your email!
+3. Choose conda or micromamba to match what you use and change the env path to yours to activate the environment.
+4. Set this path to match up with the folder where your sequencing data is stored.
+5. Set this to match up with your config file name with the prefix “./”
+6. Change the library filename to match up with the name that you’ve given to the file.
+
+### Add to cluster
+Once this is done, add this (1) **crispresso_analysis_42nt.sh** to your sequencing folder, along with (2) **crispresso_analysis_w_qwc_42nt.py**.
+
+### Submit
+Finally, run the cluster command to execute this script by logging into the cluster and running the command in [`RUN_THIS.sh`](NGS-scripts/STEP5_sensor_analysis/RUN_THIS.sh).
 
 ```bash
-cd $LABROOT/<your_run>
+cd $LABROOT/<sequencing_folder>
 sbatch crispresso_analysis_42nt.sh
 ```
 
-**Heads-up:** if CRISPResso errors on folder permissions, fix with:
+**Note**: if CRISPResso errors on folder permissions, fix with:
 
 ```bash
 chmod -R g+w /net/bmc-lab2/data/lab/sanchezrivera/$USER/<your_run>/crispresso
@@ -218,13 +280,20 @@ chmod -R g+w /net/bmc-lab2/data/lab/sanchezrivera/$USER/<your_run>/crispresso
 
 [`NGS-scripts/STEP6_sensor_aggregation/`](NGS-scripts/STEP6_sensor_aggregation/)
 
-Uses **`crispresso_env`**. Aggregates per-guide CRISPResso outputs into one dataframe per sample.
+This step aggregates per-guide CRISPResso outputs into one dataframe per sample.
 
+### Edit
+
+
+### Add to the cluster
 You must add **all three** files to your sequencing folder:
 
 1. `crispresso_analysis_aggregation.sh`
 2. `crispresso_analysis_aggregation.py`
 3. `crispresso_quant_blank.csv` — **the script will fail without it**
+
+### Submit
+Finally, run the cluster command to execute this script by logging into the cluster and running the command in [`RUN_THIS.sh`](NGS-scripts/STEP6_sensor_aggregation/RUN_THIS.sh).
 
 ```bash
 cd $LABROOT/<your_run>

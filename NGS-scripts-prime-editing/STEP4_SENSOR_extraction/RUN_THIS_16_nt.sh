@@ -1,0 +1,2 @@
+cd $LABROOT/250730Hem
+sbatch EA_sensor_extraction_peg_counts_ext_bc_16nt.sh

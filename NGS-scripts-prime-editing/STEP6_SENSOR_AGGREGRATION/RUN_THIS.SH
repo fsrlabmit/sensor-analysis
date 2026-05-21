@@ -1,0 +1,2 @@
+cd $LABROOT/250730Hem
+sbatch crispresso_analysis_aggregation_55nt.sh

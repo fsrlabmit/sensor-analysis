@@ -1,2 +1,2 @@
-cd $LABROOT/251030Hem
-sbatch sensor_extraction_42nt.sh
+cd $LABROOT/sequencing_folder
+sbatch sensor_extraction_42nt_trimming_quality.sh
