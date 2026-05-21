@@ -1,0 +1,11 @@
+# Sphinx build outputs
+docs/_build/
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.ipynb_checkpoints/
+
+# OS
+.DS_Store
