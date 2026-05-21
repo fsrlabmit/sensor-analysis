@@ -3,7 +3,7 @@
 NGS sensor analysis pipeline for base editing and prime editing screens.
 
 **Contributors:** Kexin Dong, Sam Gould
-**Last updated:** May 20, 2026
+**Last updated:** May 21, 2026
 
 ## What's new in this version
 
@@ -284,6 +284,17 @@ This step aggregates per-guide CRISPResso outputs into one dataframe per sample.
 
 ### Edit
 
+Edit `crispresso_analysis_aggregation.sh`.
+
+![Step 6](images/step_6.png)
+
+1. This needs to match up with the number of samples you’re running. E.g if your config file runs from 1-10, set this to 1-10.
+2. Change it to your email!
+3. Choose conda or micromamba to match what you use and change the env path to yours to activate the environment.
+4. Set this path to match up with the folder where your sequencing data is stored.
+5. Set this to match up with your config file name with the prefix “./”
+6. Change the library filename to match up with the name that you’ve given to the file.
+
 
 ### Add to the cluster
 You must add **all three** files to your sequencing folder:
@@ -296,9 +307,58 @@ You must add **all three** files to your sequencing folder:
 Finally, run the cluster command to execute this script by logging into the cluster and running the command in [`RUN_THIS.sh`](NGS-scripts/STEP6_sensor_aggregation/RUN_THIS.sh).
 
 ```bash
-cd $LABROOT/<your_run>
+cd $LABROOT/<sequence_folder>
 sbatch crispresso_analysis_aggregation.sh
 ```
+
+### Actions before running STEP7
+
+After step 4-6, you will generate data as follows on the cluster:
+
+#### `classification/`
+Per-sample read-quality and protospacer/barcode-identification breakdown.
+
+| Column | Description |
+| --- | --- |
+| `good_quality`              | reads above quality threshold |
+| `low_qual_r1`               | R1 below threshold (excluded) |
+| `low_qual_r2`               | R2 below threshold (excluded) |
+| `low_qual_r12`              | both R1 and R2 below threshold (excluded) |
+| `no_match_bc`               | good-quality reads with no barcode match |
+| `bc_identified`             | good-quality reads with barcode identified |
+| `proto_identified_perfect`  | good-quality reads, protospacer with 0 mismatches |
+| `proto_identified_imperfect`| good-quality reads, protospacer within allowed mismatches |
+| `proto_identified_recombined`| good-quality reads, protospacer identified but barcode mismatch (recombination event) |
+| `no_match_proto`            | good-quality reads, no protospacer identified |
+
+#### `confusion_mats/`
+Recombination matrix between protospacer and barcode (diagnostic).
+
+#### `counts/`
+Per-sample guide and barcode counts.
+
+| Column | Description |
+| --- | --- |
+| `Guide_ID`            | guide name |
+| `sgRNA_no_Gstart`     | protospacer |
+| `unique_BC`           | barcode |
+| `total_guide_count`   | total protospacer count (incl. recombination) |
+| `matched_guide_count` | reads with matched protospacer-barcode pairs |
+| `bc_count`            | total barcode count (incl. recombination) |
+| `duplicate_sgRNA`     | TRUE if guide appears more than once in the library |
+
+Run MAGeCK on either `matched_guide_count` (more stringent) or `bc_count` (higher counts).
+
+#### `crispresso/`
+Per-guide CRISPResso editing outcomes. Aggregated by STEP6, compiled by STEP7.
+
+Following steps will analyze these data in Jupyter Notebooks. Before doing so,
+
+-  **copy the `.csv` files out of the cluster `crispresso/` folder to the local folder**.
+<img src="images/crispresso.png" alt="crispresso" width="40%">
+
+- **copy the whole `counts/` folder to the local working folder.**
+<img src="images/counts.png" alt="counts" width="40%">
 
 ---
 
@@ -306,17 +366,16 @@ sbatch crispresso_analysis_aggregation.sh
 
 [`NGS-scripts/STEP7_crispresso_compiler/compiling_crispresso.ipynb`](NGS-scripts/STEP7_crispresso_compiler/compiling_crispresso.ipynb)
 
-Local (post-cluster) notebook. Compiles the per-sample CRISPResso aggregates from STEP6 into a single editing-outcome table, merges NGS technical replicates, and supports ABE/CBE × BC/EPO splits.
-
-> Tip: copy only the `.csv` files out of the cluster `crispresso/` folder — do not pull the whole folder.
-
+This notebook:
+- Merges NGS lane replicates (if needed).
+- Generates MLE table that combines biological replicates.
 ---
 
-## STEP 8 — Counts matrix & MAGeCK
+## STEP 8 — Counts matrix (and MaGeCk)
 
 [`NGS-scripts/STEP8_counts_and_MaGeCk/mageck.ipynb`](NGS-scripts/STEP8_counts_and_MaGeCk/mageck.ipynb)
 
-Local notebook. Builds a count matrix (samples × guides) from STEP4 counts and feeds it into MAGeCK for normalization, LFC, and FDR.
+Local notebook. Builds a count matrix (samples × guides) from STEP4 counts, which can be used for QC analysis as well as MaGeCk, to calculate LFC and FDR.
 
 **Important:** when building ABE-only or CBE-only sub-pool files, keep only the matching guides.
 
@@ -334,45 +393,116 @@ mageck test \
 
 `-t` = treatment columns, `-c` = control columns, `-n` = output prefix. The main result is `*.sgrna_summary.txt`. Docs: https://sourceforge.net/p/mageck/wiki/Home/
 
----
+--- 
 
-## Output reference
+## STEP 9 — Empirical LFC-FDR calculation
 
-After STEP4 finishes, your sequencing folder contains four sub-folders:
+[`NGS-scripts/STEP9_LFC_FDR_calculation/LFC_FDR_calculation.ipynb`](NGS-scripts/STEP9_LFC_FDR_calculation/LFC_FDR_calculation.ipynb)
 
-### `classification/`
-Per-sample read-quality and protospacer/barcode-identification breakdown.
+This notebook computes guide-level **log2 fold-changes (LFCs)**, **empirical p-values**, **combined p-values across replicates**, and **BH-adjusted FDRs** from the count tables produced in STEP 8, and attaches sensor editing measurements from STEP 7 to the output table for downstream calibration.
 
-| Column | Description |
-| --- | --- |
-| `good_quality`              | reads above quality threshold |
-| `low_qual_r1`               | R1 below threshold (excluded) |
-| `low_qual_r2`               | R2 below threshold (excluded) |
-| `low_qual_r12`              | both R1 and R2 below threshold (excluded) |
-| `no_match_bc`               | good-quality reads with no barcode match |
-| `bc_identified`             | good-quality reads with barcode identified |
-| `proto_identified_perfect`  | good-quality reads, protospacer with 0 mismatches |
-| `proto_identified_imperfect`| good-quality reads, protospacer within allowed mismatches |
-| `proto_identified_recombined`| good-quality reads, protospacer identified but barcode mismatch (recombination event) |
-| `no_match_proto`            | good-quality reads, no protospacer identified |
+#### Why a custom pipeline (instead of MAGeCK)
 
-### `confusion_mats/`
-Recombination matrix between protospacer and barcode (diagnostic).
+We initially ran MAGeCK on these screens, but it consistently overestimated the number of significant hits — calling large fractions of guides as enriched/depleted, including in noisy tissues (e.g. CBE meninges). The likely reason: MAGeCK was designed for **CRISPR nuclease screens** where multiple guides per gene are collapsed into a single gene-level score, while our analysis focuses on **individual guide behavior** and we want to preserve replicate-level variability rather than collapse it early.
 
-### `counts/`
-Per-sample guide and barcode counts.
+The pipeline here is a more conservative, **non-parametric** alternative that builds an empirical null distribution from control guides (safe-targeting + non-targeting) **separately per tissue and per screen**, and uses it to assign p-values without imposing a parametric model.
 
-| Column | Description |
-| --- | --- |
-| `Guide_ID`            | guide name |
-| `sgRNA_no_Gstart`     | protospacer |
-| `unique_BC`           | barcode |
-| `total_guide_count`   | total protospacer count (incl. recombination) |
-| `matched_guide_count` | reads with matched protospacer-barcode pairs |
-| `bc_count`            | total barcode count (incl. recombination) |
-| `duplicate_sgRNA`     | TRUE if guide appears more than once in the library |
+#### Improvements of this version
+- Further packed functions to make it easier and clearer to run for multiple screens.
+- Compatible with two baseline modes:
+    - **T0 baseline** — single `input` sample collected prior to mRNA electroporation
+    - **Barcoding baseline** — per-condition, per-tissue median RPM across barcoding screen replicates
+    - mode is auto-detected by `run_screen_pipeline` based on whether `df_counts_bc` is provided.
+- Added **concordant mean LFC** across replicates as an effect-size estimate (mean of replicates that agree on direction; guides where <2/3 of replicates agree are flagged ambiguous).
+- Sensor editing percentages from **all time points** and conditions are attached to the output table.
+- Added **z-scores** per replicate and per condition.
+- Added **Stouffer's method** as an alternative to Fisher's method for combining replicate p-values.
+- More detailed mathematical documentation throughout the notebook.
 
-Run MAGeCK on either `matched_guide_count` (more stringent) or `bc_count` (higher counts).
+### Pipeline steps (what each section in the notebook does)
 
-### `crispresso/`
-Per-guide CRISPResso editing outcomes. Aggregated by STEP6, compiled by STEP7.
+The notebook breaks down into 6 numbered analytical steps, all wired together inside `run_screen_pipeline`.
+
+**Step 1 — Normalize counts by sequencing depth.** Raw guide counts are converted to **reads per million (RPM)** with a pseudocount of 1 to avoid zeros and stabilize the downstream log:
+
+$$
+RPM_{ij} = \frac{count_{ij} + 1}{\sum_k (count_{kj} + 1)} \times 10^6
+$$
+
+**Step 2 — Calculate LFC and summarize across replicates.** For each guide in each replicate, LFC is computed against the chosen baseline:
+
+$$
+LFC_{ij} = \log_2 \left( \frac{RPM_{ij,\mathrm{sample}}}{\widetilde{RPM}_{i,\mathrm{baseline}}} \right)
+$$
+
+where the baseline is either (a) median across T0 input replicates or (b) median across barcoding-screen replicates for the same condition. Replicate-level LFCs are summarized into **mean**, **median**, and **concordant mean** (with 2/3-replicate directional-agreement threshold), and each summary is also converted to a **z-score** across all guides in that condition.
+
+**Step 3 — Attach sensor editing info.** Editing percentages from STEP 7's MLE CSVs (`corr_perc`, `target_base_edit_perc`, `byproduct_INDEL_perc`, `byproduct_sub_perc`, `Reads_aligned_all_amplicons`) are merged onto the LFC table for **every** condition (input / d5 / d15 / bm / spleen / men).
+
+**Step 4 — Bootstrap an empirical null from control guides.** For each tissue:
+1. Pool LFC values from all safe-targeting + non-targeting guides across replicates,
+2. Bootstrap-resample 10,000 LFC values (with replacement) from that pool.
+
+This null captures tissue-specific technical/biological variability without assuming a parametric distribution. The notebook also plots each null overlaid with per-replicate control LFC histograms for QC.
+
+**Step 5 — Compute two-sided empirical p-values per replicate.** For each guide × replicate:
+
+$$
+p_{\mathrm{high}} = \frac{1 + \#(null \geq LFC_{\mathrm{obs}})}{1 + N_{\mathrm{null}}}
+\qquad
+p_{\mathrm{low}} = \frac{1 + \#(null \leq LFC_{\mathrm{obs}})}{1 + N_{\mathrm{null}}}
+$$
+
+The +1 pseudocount keeps p-values strictly positive. Enrichment and depletion tails are kept separate so direction can be assessed independently.
+
+**Step 6 — Combine across replicates + multiple-testing correction.** Replicate p-values are combined with both:
+- **Fisher's method** — sensitive to a single strong replicate.
+- **Stouffer's method** — requires more consistent evidence across replicates.
+
+Combined p-values are then BH-adjusted (`statsmodels.stats.multitest.multipletests`), and the final two-sided FDR per guide is $FDR = \min(FDR_{\mathrm{high}},\ FDR_{\mathrm{low}})$. We report Fisher's by default; Stouffer's is stored for comparison. Default significance cutoff is **FDR < 0.1**.
+
+> **Caveat:** both Fisher and Stouffer assume independence between tests. In our setting biological replicates share the same initial guide pool and may exhibit correlated variability, so this assumption is only approximate.
+
+### How to use this notebook
+
+1. **Define functions.** Run all cells from the top through `run_screen_pipeline` (imports, `rpm`, `LFC_table_generator`, `attach_editing_info`, `bootstrap_null`, `plot_null_distributions`, `empirical_p_value`, `two_sided_FDR`). These only define functions — no output.
+2. **Load data.** Run the cells that read the STEP 8 count tables, the library annotation, and any other shared inputs.
+3. **Configure screens.** In the `screens` dictionary, add one entry per screen. Each entry takes:
+   - `df_counts` — the raw count DataFrame (e.g. `ABE_OG_COUNTS`)
+   - `library` — library annotation table with `gRNA_id` + `classification` columns
+   - `samps_to_merge` — replicate columns grouped by condition (list of lists)
+   - `new_names` — short condition names matching each group
+   - `to_comparison_samps` — baseline sample column(s) for T0 LFC (e.g. `['input']`)
+   - `conditions_null` — which conditions to compute null distributions + FDR for
+   - `fp_editing`, `mle_names`, `mle_affix` — paths and labels for STEP 7's MLE editing CSVs
+   - *(optional)* `df_counts_bc`, `samps_to_merge_bc`, `new_names_bc` — provide these instead of `to_comparison_samps` to switch to the barcoding baseline
+4. **Run.** Execute the `screens` cell. The pipeline runs each screen and prints per-condition hit counts. Results land in `results[screen_name]['LFC_FDR']`.
+5. **Save.** Run the final cell to export each screen's combined LFC + FDR table to `LFC-FDR/<screen_name>_LFC_FDR.csv`.
+
+### Output table
+
+For each screen, the final CSV contains three categories of columns (one set per tissue):
+
+#### Effect size
+- **LFC** per replicate per tissue
+- **Mean, concordant mean, median LFC** across replicates per tissue
+- **Mean, concordant mean, median z-score** across replicates per tissue
+
+#### Statistical significance
+- **Empirical p-value** per replicate per tissue (from the non-parametric null)
+- **Combined p-value** across replicates per tissue (Fisher + Stouffer)
+- **BH-adjusted FDR** for Fisher and Stouffer combined p-values per tissue
+
+#### Sensor editing
+- **Target editing %** and **correct editing %** at every time point/condition (input / d5 / d15 / bm / spleen / men), so calibration analyses (e.g. LFC vs editing efficiency) can be done directly from this single table.
+
+## More downstream analyses
+
+After running STEPs 1–9, you'll have the following processed data in hand:
+
+- **counts** — per-sample guide and barcode counts (STEP 4)
+- **crispresso_compiled** — per-guide editing outcomes, lane-merged (STEP 7)
+- **MLE** — biological-replicate-merged editing tables (STEP 7)
+- **LFC-FDR** — guide-level effect sizes, z-scores, empirical p-values, FDRs, and attached editing info (STEP 9)
+
+These outputs are the starting point for downstream analyses. Reference code for these steps are in progress and will be added here as they're finalized. - KD, 5-21-2026
