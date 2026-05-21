@@ -42,6 +42,6 @@ splitby='protospacer'
 proto_mismatches_allowed=2
 bc_len=15
 sensor_len=42
-quality_check_mode='region_average_and_threshold' #options: 'full_average', 'region_average', 'region_threshold', 'region_average_and_threshold'
+quality_check_mode='region_average' #options: 'full_average', 'region_average', 'region_threshold', 'region_average_and_threshold'
 
 python3 sensor_extraction_42nt.py FINAL_focused_library.csv ${R1_FILE} ${R2_FILE} ${splitby} ${proto_mismatches_allowed} ${bc_len} ${sensor_len} ${quality_check_mode} -o ${folder_name}

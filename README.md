@@ -137,11 +137,14 @@ You’ll also need to have the library file with the proper column names:
 
 Follow the Jupyter Notebook above to check you have proper columns included and correct names for them before proceeding forward.
 
+---
+
 ### Actions before running STEP4
 
 In your **sequencing folder on the cluster**,
 
-- Add the **config file** and **library file** 
+- Check the length of sensor and the length of barcode of your library by following [`03_generate_config_file.ipynb`](NGS-scripts/STEP3_generate_config_file/03_generate_config_file.ipynb);
+- Add the **config file** and **library file**;
 - Create these **4 sub-folders** **(names must be exact, lowercase)**:
 
 1. `classification`
@@ -149,21 +152,24 @@ In your **sequencing folder on the cluster**,
 3. `counts`
 4. `crispresso`
 
+### Note
+
+Step 4 - 6 will be run on the cluster. For each step, there is a python script and a corresponding `.sh` script that provides instructions to the cluster about which samples to run analysis on/where these files are located. Do not modify the Python script. **The only thing you will need to edit are these .sh scripts.**
+
 ---
 
 ## STEP 4 — Sensor extraction & guide counts
 
 [`NGS-scripts/STEP4_sensor_extraction/`](NGS-scripts/STEP4_sensor_extraction/)
 
-Uses **`sensor_env`**. Filters low-quality reads, counts guides, and splits sensor reads into per-guide fastq files. Three variants of the sbatch script are provided — pick one based on how strict the QC should be:
+This step (A) filters low-quality reads, (B) counts guides, and (C) splits sensor reads into per-guide fastq files. 
+
+Three variants of the sbatch script are provided — pick one based on how strict the QC should be:
 
 | Script | QC strategy |
 | --- | --- |
-| `sensor_extraction_42nt.sh`                 | Baseline (original Sam Gould version) |
-| `sensor_extraction_42nt_trimming.sh`        | Revised v1 — checks only required regions (KD, 2026-03-10) |
-| `sensor_extraction_42nt_trimming_quality.sh`| Revised v2 — region checks + per-base quality threshold (KD, 2026-03-10) |
-
-Background and rationale for the QC strategies are in [`sensor_extraction_guideline.ipynb`](NGS-scripts/STEP4_sensor_extraction/sensor_extraction_guideline.ipynb).
+| `sensor_extraction_42nt`                 | Average of full sequence (original SG version) |
+| `sensor_extraction_42nt_trimming_quality`| Can choose region checks + per-base quality threshold (revised by KD, 2026-03-10) |
 
 ### Edit before submitting
 
